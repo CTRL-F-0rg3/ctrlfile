@@ -21,16 +21,14 @@ fn toStr(v: Value) []const u8 {
     };
 }
 
-fn toolMissing(allocator: std.mem.Allocator, tool: []const u8) bool {
+fn toolMissing(allocator: std.mem.Allocator, io: std.Io, tool: []const u8) bool {
     const cmd = std.fmt.allocPrint(allocator, "command -v {s} >/dev/null 2>&1", .{tool}) catch return true;
-    defer allocator.free(cmd);
-    const result = std.process.Child.run(.{
-        .allocator = allocator,
-        .argv = &[_][]const u8{ "sh", "-c", cmd },
-    }) catch return true;
-    defer allocator.free(result.stdout);
-    defer allocator.free(result.stderr);
-    return switch (result.term) {
+    var child = std.process.Child.init(&[_][]const u8{ "sh", "-c", cmd }, allocator);
+    child.stdout_behavior = .Ignore;
+    child.stderr_behavior = .Ignore;
+    child.spawn(io) catch return true;
+    const term = child.wait(io) catch return true;
+    return switch (term) {
         .Exited => |code| code != 0,
         else => true,
     };
@@ -50,12 +48,12 @@ fn currentOsName() []const u8 {
     };
 }
 
-pub fn eval(allocator: std.mem.Allocator, expr: *ast.Expr) Value {
+pub fn eval(allocator: std.mem.Allocator, io: std.Io, expr: *ast.Expr) Value {
     return switch (expr.kind) {
         .string => Value{ .string = expr.str },
         .call => blk: {
             if (std.mem.eql(u8, expr.call_name, "missing")) {
-                break :blk Value{ .boolean = toolMissing(allocator, expr.call_arg) };
+                break :blk Value{ .boolean = toolMissing(allocator, io, expr.call_arg) };
             } else if (std.mem.eql(u8, expr.call_name, "exists")) {
                 break :blk Value{ .boolean = pathExists(expr.call_arg) };
             } else if (std.mem.eql(u8, expr.call_name, "env")) {
@@ -67,37 +65,37 @@ pub fn eval(allocator: std.mem.Allocator, expr: *ast.Expr) Value {
             break :blk Value{ .boolean = false };
         },
         .eq => blk: {
-            const l = eval(allocator, expr.left.?);
-            const r = eval(allocator, expr.right.?);
+            const l = eval(allocator, io, expr.left.?);
+            const r = eval(allocator, io, expr.right.?);
             break :blk Value{ .boolean = std.mem.eql(u8, toStr(l), toStr(r)) };
         },
         .neq => blk: {
-            const l = eval(allocator, expr.left.?);
-            const r = eval(allocator, expr.right.?);
+            const l = eval(allocator, io, expr.left.?);
+            const r = eval(allocator, io, expr.right.?);
             break :blk Value{ .boolean = !std.mem.eql(u8, toStr(l), toStr(r)) };
         },
         .and_ => blk: {
-            const l = eval(allocator, expr.left.?);
+            const l = eval(allocator, io, expr.left.?);
             if (!toBool(l)) break :blk Value{ .boolean = false };
-            const r = eval(allocator, expr.right.?);
+            const r = eval(allocator, io, expr.right.?);
             break :blk Value{ .boolean = toBool(r) };
         },
         .or_ => blk: {
-            const l = eval(allocator, expr.left.?);
+            const l = eval(allocator, io, expr.left.?);
             if (toBool(l)) break :blk Value{ .boolean = true };
-            const r = eval(allocator, expr.right.?);
+            const r = eval(allocator, io, expr.right.?);
             break :blk Value{ .boolean = toBool(r) };
         },
         .not_ => blk: {
-            const l = eval(allocator, expr.left.?);
+            const l = eval(allocator, io, expr.left.?);
             break :blk Value{ .boolean = !toBool(l) };
         },
         .ternary => blk: {
-            const c = eval(allocator, expr.cond.?);
+            const c = eval(allocator, io, expr.cond.?);
             if (toBool(c)) {
-                break :blk eval(allocator, expr.then_expr.?);
+                break :blk eval(allocator, io, expr.then_expr.?);
             }
-            break :blk eval(allocator, expr.else_expr.?);
+            break :blk eval(allocator, io, expr.else_expr.?);
         },
     };
 }

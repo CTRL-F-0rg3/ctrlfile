@@ -63,6 +63,19 @@ pub const Parser = struct {
     fn parseRunBlock(self: *Parser) ParseError!ast.RunBlock {
         _ = try self.expect(.kw_run);
         const name_tok = try self.expect(.string);
+
+        var needs = std.ArrayList([]const u8).init(self.allocator);
+        if (self.check(.ident) and std.mem.eql(u8, self.peek().text, "needs")) {
+            _ = self.advance();
+            const first = try self.expect(.string);
+            try needs.append(first.text);
+            while (self.check(.comma)) {
+                _ = self.advance();
+                const dep = try self.expect(.string);
+                try needs.append(dep.text);
+            }
+        }
+
         _ = try self.expect(.lbrace);
 
         var steps = std.ArrayList(ast.Step).init(self.allocator);
@@ -73,6 +86,7 @@ pub const Parser = struct {
 
         return ast.RunBlock{
             .name = name_tok.text,
+            .needs = try needs.toOwnedSlice(),
             .steps = try steps.toOwnedSlice(),
         };
     }

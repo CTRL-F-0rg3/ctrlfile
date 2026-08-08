@@ -14,6 +14,7 @@ pub const Step = struct {
 
 pub const RunBlock = struct {
     name: []const u8,
+    needs: [][]const u8,
     steps: []Step,
 };
 

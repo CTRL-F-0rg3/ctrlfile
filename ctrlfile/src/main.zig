@@ -6,20 +6,14 @@ const executor = @import("executor.zig");
 const logger_mod = @import("logger.zig");
 
 fn readFile(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
-    const file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
-    const stat = try file.stat();
-    const buf = try allocator.alloc(u8, stat.size);
-    _ = try file.readAll(buf);
-    return buf;
+    return std.fs.cwd().readFileAlloc(allocator, path, .unlimited);
 }
 
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.arena.allocator();
+    const io = init.io;
 
-    const args = try std.process.argsAlloc(allocator);
+    const args = try init.minimal.args.toSlice(allocator);
     if (args.len < 2) {
         std.debug.print("uzycie: ctrlfile <nazwa-run>\n", .{});
         std.process.exit(1);
@@ -52,14 +46,14 @@ pub fn main() !void {
         std.process.exit(1);
     };
 
-    var log = logger_mod.Logger.init("logs.txt") catch |err| {
+    var log = logger_mod.Logger.init(allocator, "logs.txt") catch |err| {
         std.debug.print("nie mozna otworzyc logs.txt: {s}\n", .{@errorName(err)});
         std.process.exit(1);
     };
     defer log.deinit();
 
-    try executor.runWhens(allocator, &config, program.whens, &log);
-    executor.runBlock(allocator, &config, program, target_name, &log) catch |err| {
+    try executor.runWhens(allocator, io, &config, program.whens, &log);
+    executor.runBlock(allocator, io, &config, program, target_name, &log) catch |err| {
         std.debug.print("blad wykonania '{s}': {s}\n", .{ target_name, @errorName(err) });
         std.process.exit(1);
     };

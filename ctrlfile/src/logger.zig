@@ -3,11 +3,12 @@ const std = @import("std");
 pub const Logger = struct {
     file: std.fs.File,
     mutex: std.Thread.Mutex = .{},
+    allocator: std.mem.Allocator,
 
-    pub fn init(path: []const u8) !Logger {
+    pub fn init(allocator: std.mem.Allocator, path: []const u8) !Logger {
         const file = try std.fs.cwd().createFile(path, .{ .truncate = false });
         try file.seekFromEnd(0);
-        return Logger{ .file = file };
+        return Logger{ .file = file, .allocator = allocator };
     }
 
     pub fn deinit(self: *Logger) void {
@@ -34,12 +35,10 @@ pub const Logger = struct {
     pub fn log(self: *Logger, comptime fmt: []const u8, args: anytype) void {
         self.mutex.lock();
         defer self.mutex.unlock();
-        var buf: [32]u8 = undefined;
-        const ts = timestamp(&buf);
-        const w = self.file.writer();
-        w.print("[{s}] ", .{ts}) catch {};
-        w.print(fmt, args) catch {};
-        w.print("\n", .{}) catch {};
-        self.file.sync() catch {};
+        var tsbuf: [32]u8 = undefined;
+        const ts = timestamp(&tsbuf);
+        const line = std.fmt.allocPrint(self.allocator, "[{s}] " ++ fmt ++ "\n", .{ts} ++ args) catch return;
+        defer self.allocator.free(line);
+        self.file.writeAll(line) catch {};
     }
 };

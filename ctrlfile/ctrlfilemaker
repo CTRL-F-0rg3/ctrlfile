@@ -12,7 +12,7 @@ run "build" {
     step 3: cmd("cp zig-out/bin/{{output.name}} {{output.path}}")
 }
 
-run "check" {
+run "check" needs "build" {
     step 1: cmd("zig build test") & cmd("zig fmt --check src")
     step 2: cmd("echo wszystko ok")
 }

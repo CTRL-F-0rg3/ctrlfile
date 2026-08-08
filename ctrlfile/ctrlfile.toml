@@ -8,3 +8,7 @@ path = "bin/myapp"
 
 [tools]
 required = ["zig", "git", "curl"]
+
+[installer]
+manager = "pacman"
+cmd = "sudo pacman -S --noconfirm {tool}"
