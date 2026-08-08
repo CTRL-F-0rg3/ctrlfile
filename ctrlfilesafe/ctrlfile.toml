@@ -1,0 +1,14 @@
+[toolchain]
+compiler = "cargo"
+optimizer = "release"
+
+[output]
+name = "myapp"
+path = "target/release/myapp"
+
+[tools]
+required = ["cargo", "git", "curl"]
+
+[installer]
+manager = "apt"
+cmd = "sudo apt-get install -y {tool}"

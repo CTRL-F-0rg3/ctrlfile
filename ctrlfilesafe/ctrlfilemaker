@@ -1,0 +1,18 @@
+when missing("curl") {
+    install("curl")
+}
+
+when os("linux") && !exists("target") {
+    cmd(["mkdir", "-p", "target"])
+}
+
+run "build" {
+    step 1: cmd(["echo", "start budowy"])
+    step 2: cmd(["echo", "kompilacja w trybie {{toolchain.optimizer}}"])
+    step 3: cmd(["echo", "gotowe: {{output.name}}"])
+}
+
+run "check" needs "build" {
+    step 1: cmd(["echo", "test A"]) & cmd(["echo", "test B"])
+    step 2: shell("echo shell dziala && echo druga linia")
+}
