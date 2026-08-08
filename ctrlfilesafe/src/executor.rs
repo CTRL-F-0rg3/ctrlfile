@@ -135,7 +135,28 @@ fn run_actions_parallel(config: &Config, actions: &[Action], logger: &Logger, la
             .iter()
             .map(|a| scope.spawn(|| run_action(config, a)))
             .collect();
-        handles.into_iter().map(|h| h.join().unwrap()).collect()
+        handles
+            .into_iter()
+            .map(|h| {
+                h.join().unwrap_or_else(|panic_payload| {
+                    let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                        s.to_string()
+                    } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "watek zakonczyl sie panika (nieznana przyczyna)".to_string()
+                    };
+                    ActionResult {
+                        ok: false,
+                        exit_code: -1,
+                        duration_ms: 0,
+                        stdout: String::new(),
+                        stderr: format!("PANIKA W WATKU: {}", msg),
+                        argv: vec![],
+                    }
+                })
+            })
+            .collect()
     });
 
     let mut all_ok = true;
