@@ -61,15 +61,15 @@ fn parseListLiteral(allocator: std.mem.Allocator, raw: []const u8) ![][]const u8
     if (body.len >= 2 and body[0] == '[' and body[body.len - 1] == ']') {
         body = body[1 .. body.len - 1];
     }
-    var items = std.ArrayList([]const u8).init(allocator);
+    var items: std.ArrayList([]const u8) = .empty;
     var it = std.mem.splitScalar(u8, body, ',');
     while (it.next()) |chunk| {
         const c = trim(chunk);
         if (c.len == 0) continue;
         const s = try parseStringLiteral(allocator, c);
-        try items.append(s);
+        try items.append(allocator, s);
     }
-    return items.toOwnedSlice();
+    return items.toOwnedSlice(allocator);
 }
 
 pub fn parse(allocator: std.mem.Allocator, src: []const u8) !Config {

@@ -78,13 +78,13 @@ pub const Lexer = struct {
     }
 
     pub fn tokenize(self: *Lexer) ![]Token {
-        var tokens = std.ArrayList(Token).init(self.allocator);
+        var tokens: std.ArrayList(Token) = .empty;
         while (true) {
             self.skipTrivia();
             const line = self.line;
             const c = self.peek();
             if (c == 0) {
-                try tokens.append(Token{ .kind = .eof, .text = "", .line = line });
+                try tokens.append(self.allocator, Token{ .kind = .eof, .text = "", .line = line });
                 break;
             }
 
@@ -93,13 +93,13 @@ pub const Lexer = struct {
                 while (isIdentChar(self.peek())) _ = self.advance();
                 const text = self.src[start..self.pos];
                 if (std.mem.eql(u8, text, "run")) {
-                    try tokens.append(Token{ .kind = .kw_run, .text = text, .line = line });
+                    try tokens.append(self.allocator, Token{ .kind = .kw_run, .text = text, .line = line });
                 } else if (std.mem.eql(u8, text, "when")) {
-                    try tokens.append(Token{ .kind = .kw_when, .text = text, .line = line });
+                    try tokens.append(self.allocator, Token{ .kind = .kw_when, .text = text, .line = line });
                 } else if (std.mem.eql(u8, text, "step")) {
-                    try tokens.append(Token{ .kind = .kw_step, .text = text, .line = line });
+                    try tokens.append(self.allocator, Token{ .kind = .kw_step, .text = text, .line = line });
                 } else {
-                    try tokens.append(Token{ .kind = .ident, .text = text, .line = line });
+                    try tokens.append(self.allocator, Token{ .kind = .ident, .text = text, .line = line });
                 }
                 continue;
             }
@@ -107,7 +107,7 @@ pub const Lexer = struct {
             if (std.ascii.isDigit(c)) {
                 const start = self.pos;
                 while (std.ascii.isDigit(self.peek())) _ = self.advance();
-                try tokens.append(Token{ .kind = .number, .text = self.src[start..self.pos], .line = line });
+                try tokens.append(self.allocator, Token{ .kind = .number, .text = self.src[start..self.pos], .line = line });
                 continue;
             }
 
@@ -120,69 +120,69 @@ pub const Lexer = struct {
                 }
                 const text = self.src[start..self.pos];
                 _ = self.advance();
-                try tokens.append(Token{ .kind = .string, .text = text, .line = line });
+                try tokens.append(self.allocator, Token{ .kind = .string, .text = text, .line = line });
                 continue;
             }
 
             switch (c) {
                 '{' => {
                     _ = self.advance();
-                    try tokens.append(Token{ .kind = .lbrace, .text = "{", .line = line });
+                    try tokens.append(self.allocator, Token{ .kind = .lbrace, .text = "{", .line = line });
                 },
                 '}' => {
                     _ = self.advance();
-                    try tokens.append(Token{ .kind = .rbrace, .text = "}", .line = line });
+                    try tokens.append(self.allocator, Token{ .kind = .rbrace, .text = "}", .line = line });
                 },
                 '(' => {
                     _ = self.advance();
-                    try tokens.append(Token{ .kind = .lparen, .text = "(", .line = line });
+                    try tokens.append(self.allocator, Token{ .kind = .lparen, .text = "(", .line = line });
                 },
                 ')' => {
                     _ = self.advance();
-                    try tokens.append(Token{ .kind = .rparen, .text = ")", .line = line });
+                    try tokens.append(self.allocator, Token{ .kind = .rparen, .text = ")", .line = line });
                 },
                 ':' => {
                     _ = self.advance();
-                    try tokens.append(Token{ .kind = .colon, .text = ":", .line = line });
+                    try tokens.append(self.allocator, Token{ .kind = .colon, .text = ":", .line = line });
                 },
                 ',' => {
                     _ = self.advance();
-                    try tokens.append(Token{ .kind = .comma, .text = ",", .line = line });
+                    try tokens.append(self.allocator, Token{ .kind = .comma, .text = ",", .line = line });
                 },
                 '?' => {
                     _ = self.advance();
-                    try tokens.append(Token{ .kind = .question, .text = "?", .line = line });
+                    try tokens.append(self.allocator, Token{ .kind = .question, .text = "?", .line = line });
                 },
                 '&' => {
                     _ = self.advance();
                     if (self.peek() == '&') {
                         _ = self.advance();
-                        try tokens.append(Token{ .kind = .andand, .text = "&&", .line = line });
+                        try tokens.append(self.allocator, Token{ .kind = .andand, .text = "&&", .line = line });
                     } else {
-                        try tokens.append(Token{ .kind = .amp, .text = "&", .line = line });
+                        try tokens.append(self.allocator, Token{ .kind = .amp, .text = "&", .line = line });
                     }
                 },
                 '|' => {
                     _ = self.advance();
                     if (self.peek() == '|') {
                         _ = self.advance();
-                        try tokens.append(Token{ .kind = .oror, .text = "||", .line = line });
+                        try tokens.append(self.allocator, Token{ .kind = .oror, .text = "||", .line = line });
                     }
                 },
                 '=' => {
                     _ = self.advance();
                     if (self.peek() == '=') {
                         _ = self.advance();
-                        try tokens.append(Token{ .kind = .eqeq, .text = "==", .line = line });
+                        try tokens.append(self.allocator, Token{ .kind = .eqeq, .text = "==", .line = line });
                     }
                 },
                 '!' => {
                     _ = self.advance();
                     if (self.peek() == '=') {
                         _ = self.advance();
-                        try tokens.append(Token{ .kind = .noteq, .text = "!=", .line = line });
+                        try tokens.append(self.allocator, Token{ .kind = .noteq, .text = "!=", .line = line });
                     } else {
-                        try tokens.append(Token{ .kind = .not, .text = "!", .line = line });
+                        try tokens.append(self.allocator, Token{ .kind = .not, .text = "!", .line = line });
                     }
                 },
                 else => {
@@ -190,6 +190,6 @@ pub const Lexer = struct {
                 },
             }
         }
-        return tokens.toOwnedSlice();
+        return tokens.toOwnedSlice(self.allocator);
     }
 };

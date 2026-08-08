@@ -1,22 +1,24 @@
 const std = @import("std");
 
 pub const Logger = struct {
-    file: std.fs.File,
-    mutex: std.Thread.Mutex = .{},
+    file: std.Io.File,
+    io: std.Io,
     allocator: std.mem.Allocator,
+    mutex: std.Io.Mutex = .init,
 
-    pub fn init(allocator: std.mem.Allocator, path: []const u8) !Logger {
-        const file = try std.fs.cwd().createFile(path, .{ .truncate = false });
-        try file.seekFromEnd(0);
-        return Logger{ .file = file, .allocator = allocator };
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !Logger {
+        const cwd = std.Io.Dir.cwd();
+        const file = try cwd.createFile(io, path, .{});
+        return Logger{ .file = file, .io = io, .allocator = allocator };
     }
 
     pub fn deinit(self: *Logger) void {
-        self.file.close();
+        self.file.close(self.io);
     }
 
-    fn timestamp(buf: []u8) []const u8 {
-        const secs: u64 = @intCast(std.time.timestamp());
+    fn timestampString(io: std.Io, buf: []u8) []const u8 {
+        const ts = std.Io.Clock.real.now(io);
+        const secs: u64 = @intCast(@divFloor(ts.nanoseconds, std.time.ns_per_s));
         const epoch_secs = std.time.epoch.EpochSeconds{ .secs = secs };
         const day = epoch_secs.getEpochDay();
         const year_day = day.calculateYearDay();
@@ -33,12 +35,12 @@ pub const Logger = struct {
     }
 
     pub fn log(self: *Logger, comptime fmt: []const u8, args: anytype) void {
-        self.mutex.lock();
-        defer self.mutex.unlock();
+        self.mutex.lock(self.io) catch return;
+        defer self.mutex.unlock(self.io);
         var tsbuf: [32]u8 = undefined;
-        const ts = timestamp(&tsbuf);
+        const ts = timestampString(self.io, &tsbuf);
         const line = std.fmt.allocPrint(self.allocator, "[{s}] " ++ fmt ++ "\n", .{ts} ++ args) catch return;
         defer self.allocator.free(line);
-        self.file.writeAll(line) catch {};
+        self.file.writeStreamingAll(self.io, line) catch {};
     }
 };

@@ -11,7 +11,7 @@ pub const ExecError = error{
 };
 
 fn interpolate(allocator: std.mem.Allocator, config: *toml.Config, s: []const u8) ![]const u8 {
-    var out = std.ArrayList(u8).init(allocator);
+    var out: std.ArrayList(u8) = .empty;
     var i: usize = 0;
     while (i < s.len) {
         if (i + 1 < s.len and s[i] == '{' and s[i + 1] == '{') {
@@ -20,15 +20,15 @@ fn interpolate(allocator: std.mem.Allocator, config: *toml.Config, s: []const u8
             while (j + 1 < s.len and !(s[j] == '}' and s[j + 1] == '}')) : (j += 1) {}
             const key = std.mem.trim(u8, s[start..j], " \t");
             if (config.get(key)) |val| {
-                try out.appendSlice(val);
+                try out.appendSlice(allocator, val);
             }
             i = j + 2;
         } else {
-            try out.append(s[i]);
+            try out.append(allocator, s[i]);
             i += 1;
         }
     }
-    return out.toOwnedSlice();
+    return out.toOwnedSlice(allocator);
 }
 
 const ActionResult = struct {
@@ -41,17 +41,17 @@ const ActionResult = struct {
 };
 
 fn runShell(allocator: std.mem.Allocator, io: std.Io, cmd: []const u8) !ActionResult {
-    const start = std.time.milliTimestamp();
+    const start = std.Io.Clock.awake.now(io);
 
-    var child = std.process.Child.init(&[_][]const u8{ "sh", "-c", cmd }, allocator);
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Pipe;
-
-    child.spawn(io) catch |err| {
+    var child = std.process.spawn(io, .{
+        .argv = &[_][]const u8{ "sh", "-c", cmd },
+        .stdout = .pipe,
+        .stderr = .pipe,
+    }) catch |err| {
         return ActionResult{
             .ok = false,
             .exit_code = -1,
-            .duration_ms = std.time.milliTimestamp() - start,
+            .duration_ms = 0,
             .stdout = "",
             .stderr = @errorName(err),
             .resolved_cmd = cmd,
@@ -61,38 +61,42 @@ fn runShell(allocator: std.mem.Allocator, io: std.Io, cmd: []const u8) !ActionRe
     var stdout_alloc = std.Io.Writer.Allocating.init(allocator);
     var stderr_alloc = std.Io.Writer.Allocating.init(allocator);
 
-    if (child.stdout) |*out_file| {
+    if (child.stdout) |out_file| {
         var read_buf: [4096]u8 = undefined;
         var out_reader = out_file.reader(io, &read_buf);
         _ = out_reader.interface.streamRemaining(&stdout_alloc.writer) catch {};
+        out_file.close(io);
     }
-    if (child.stderr) |*err_file| {
+    if (child.stderr) |err_file| {
         var read_buf: [4096]u8 = undefined;
         var err_reader = err_file.reader(io, &read_buf);
         _ = err_reader.interface.streamRemaining(&stderr_alloc.writer) catch {};
+        err_file.close(io);
     }
 
     const term = child.wait(io) catch |err| {
+        const dur = start.durationTo(std.Io.Clock.awake.now(io));
         return ActionResult{
             .ok = false,
             .exit_code = -1,
-            .duration_ms = std.time.milliTimestamp() - start,
+            .duration_ms = @intCast(@divFloor(dur.nanoseconds, std.time.ns_per_ms)),
             .stdout = stdout_alloc.written(),
             .stderr = @errorName(err),
             .resolved_cmd = cmd,
         };
     };
 
-    const duration = std.time.milliTimestamp() - start;
+    const dur = start.durationTo(std.Io.Clock.awake.now(io));
+    const duration_ms: i64 = @intCast(@divFloor(dur.nanoseconds, std.time.ns_per_ms));
     const code: i32 = switch (term) {
-        .Exited => |c| @intCast(c),
+        .exited => |c| c,
         else => -1,
     };
 
     return ActionResult{
         .ok = code == 0,
         .exit_code = code,
-        .duration_ms = duration,
+        .duration_ms = duration_ms,
         .stdout = stdout_alloc.written(),
         .stderr = stderr_alloc.written(),
         .resolved_cmd = cmd,
@@ -113,18 +117,18 @@ fn installTool(allocator: std.mem.Allocator, io: std.Io, config: *toml.Config, t
 }
 
 fn replaceTool(allocator: std.mem.Allocator, template: []const u8, tool: []const u8) ![]const u8 {
-    var out = std.ArrayList(u8).init(allocator);
+    var out: std.ArrayList(u8) = .empty;
     var i: usize = 0;
     while (i < template.len) {
         if (i + 6 <= template.len and std.mem.eql(u8, template[i .. i + 6], "{tool}")) {
-            try out.appendSlice(tool);
+            try out.appendSlice(allocator, tool);
             i += 6;
         } else {
-            try out.append(template[i]);
+            try out.append(allocator, template[i]);
             i += 1;
         }
     }
-    return out.toOwnedSlice();
+    return out.toOwnedSlice(allocator);
 }
 
 fn runAction(allocator: std.mem.Allocator, io: std.Io, config: *toml.Config, action: ast.Action) !ActionResult {
@@ -201,9 +205,9 @@ fn runActionsParallel(allocator: std.mem.Allocator, io: std.Io, config: *toml.Co
     return all_ok;
 }
 
-pub fn runWhens(allocator: std.mem.Allocator, io: std.Io, config: *toml.Config, whens: []ast.WhenBlock, log: *logger_mod.Logger) !void {
+pub fn runWhens(allocator: std.mem.Allocator, io: std.Io, environ: *const std.process.Environ.Map, config: *toml.Config, whens: []ast.WhenBlock, log: *logger_mod.Logger) !void {
     for (whens, 0..) |w, idx| {
-        const v = eval.eval(allocator, io, w.condition);
+        const v = eval.eval(allocator, io, environ, w.condition);
         const truthy = switch (v) {
             .boolean => |b| b,
             .string => |s| s.len > 0,
@@ -233,7 +237,7 @@ fn runBlockRec(
     log: *logger_mod.Logger,
     executed: *std.StringHashMap(void),
     visiting: *std.StringHashMap(void),
-) ExecError!void {
+) !void {
     if (executed.contains(name)) return;
     if (visiting.contains(name)) {
         log.log("BLAD: wykryto cykl zaleznosci przy '{s}'", .{name});

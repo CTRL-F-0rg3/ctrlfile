@@ -40,14 +40,14 @@ pub const Parser = struct {
     }
 
     pub fn parseProgram(self: *Parser) ParseError!ast.Program {
-        var runs = std.ArrayList(ast.RunBlock).init(self.allocator);
-        var whens = std.ArrayList(ast.WhenBlock).init(self.allocator);
+        var runs: std.ArrayList(ast.RunBlock) = .empty;
+        var whens: std.ArrayList(ast.WhenBlock) = .empty;
 
         while (!self.check(.eof)) {
             if (self.check(.kw_run)) {
-                try runs.append(try self.parseRunBlock());
+                try runs.append(self.allocator, try self.parseRunBlock());
             } else if (self.check(.kw_when)) {
-                try whens.append(try self.parseWhenBlock());
+                try whens.append(self.allocator, try self.parseWhenBlock());
             } else {
                 std.debug.print("linia {d}: oczekiwano 'run' lub 'when', jest '{s}'\n", .{ self.peek().line, self.peek().text });
                 return ParseError.UnexpectedToken;
@@ -55,8 +55,8 @@ pub const Parser = struct {
         }
 
         return ast.Program{
-            .runs = try runs.toOwnedSlice(),
-            .whens = try whens.toOwnedSlice(),
+            .runs = try runs.toOwnedSlice(self.allocator),
+            .whens = try whens.toOwnedSlice(self.allocator),
         };
     }
 
@@ -64,30 +64,30 @@ pub const Parser = struct {
         _ = try self.expect(.kw_run);
         const name_tok = try self.expect(.string);
 
-        var needs = std.ArrayList([]const u8).init(self.allocator);
+        var needs: std.ArrayList([]const u8) = .empty;
         if (self.check(.ident) and std.mem.eql(u8, self.peek().text, "needs")) {
             _ = self.advance();
             const first = try self.expect(.string);
-            try needs.append(first.text);
+            try needs.append(self.allocator, first.text);
             while (self.check(.comma)) {
                 _ = self.advance();
                 const dep = try self.expect(.string);
-                try needs.append(dep.text);
+                try needs.append(self.allocator, dep.text);
             }
         }
 
         _ = try self.expect(.lbrace);
 
-        var steps = std.ArrayList(ast.Step).init(self.allocator);
+        var steps: std.ArrayList(ast.Step) = .empty;
         while (!self.check(.rbrace)) {
-            try steps.append(try self.parseStep());
+            try steps.append(self.allocator, try self.parseStep());
         }
         _ = try self.expect(.rbrace);
 
         return ast.RunBlock{
             .name = name_tok.text,
-            .needs = try needs.toOwnedSlice(),
-            .steps = try steps.toOwnedSlice(),
+            .needs = try needs.toOwnedSlice(self.allocator),
+            .steps = try steps.toOwnedSlice(self.allocator),
         };
     }
 
@@ -96,17 +96,17 @@ pub const Parser = struct {
         const num_tok = try self.expect(.number);
         _ = try self.expect(.colon);
 
-        var actions = std.ArrayList(ast.Action).init(self.allocator);
-        try actions.append(try self.parseAction());
+        var actions: std.ArrayList(ast.Action) = .empty;
+        try actions.append(self.allocator, try self.parseAction());
         while (self.check(.amp)) {
             _ = self.advance();
-            try actions.append(try self.parseAction());
+            try actions.append(self.allocator, try self.parseAction());
         }
 
         const number = std.fmt.parseInt(u32, num_tok.text, 10) catch 0;
         return ast.Step{
             .number = number,
-            .actions = try actions.toOwnedSlice(),
+            .actions = try actions.toOwnedSlice(self.allocator),
         };
     }
 
@@ -132,15 +132,15 @@ pub const Parser = struct {
         const condition = try self.parseExpr();
         _ = try self.expect(.lbrace);
 
-        var actions = std.ArrayList(ast.Action).init(self.allocator);
+        var actions: std.ArrayList(ast.Action) = .empty;
         while (!self.check(.rbrace)) {
-            try actions.append(try self.parseAction());
+            try actions.append(self.allocator, try self.parseAction());
         }
         _ = try self.expect(.rbrace);
 
         return ast.WhenBlock{
             .condition = condition,
-            .actions = try actions.toOwnedSlice(),
+            .actions = try actions.toOwnedSlice(self.allocator),
         };
     }
 

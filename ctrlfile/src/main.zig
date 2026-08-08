@@ -5,8 +5,15 @@ const parser_mod = @import("parser.zig");
 const executor = @import("executor.zig");
 const logger_mod = @import("logger.zig");
 
-fn readFile(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
-    return std.fs.cwd().readFileAlloc(allocator, path, .unlimited);
+fn readFile(allocator: std.mem.Allocator, io: std.Io, path: []const u8) ![]const u8 {
+    const cwd = std.Io.Dir.cwd();
+    const file = try cwd.openFile(io, path, .{ .mode = .read_only });
+    defer file.close(io);
+    var read_buf: [4096]u8 = undefined;
+    var file_reader = file.reader(io, &read_buf);
+    var alloc_writer = std.Io.Writer.Allocating.init(allocator);
+    _ = try file_reader.interface.streamRemaining(&alloc_writer.writer);
+    return alloc_writer.written();
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -20,11 +27,11 @@ pub fn main(init: std.process.Init) !void {
     }
     const target_name = args[1];
 
-    const toml_src = readFile(allocator, "ctrlfile.toml") catch |err| {
+    const toml_src = readFile(allocator, io, "ctrlfile.toml") catch |err| {
         std.debug.print("nie mozna odczytac ctrlfile.toml: {s}\n", .{@errorName(err)});
         std.process.exit(1);
     };
-    const dsl_src = readFile(allocator, "ctrlfilemaker") catch |err| {
+    const dsl_src = readFile(allocator, io, "ctrlfilemaker") catch |err| {
         std.debug.print("nie mozna odczytac ctrlfilemaker: {s}\n", .{@errorName(err)});
         std.process.exit(1);
     };
@@ -46,13 +53,13 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(1);
     };
 
-    var log = logger_mod.Logger.init(allocator, "logs.txt") catch |err| {
+    var log = logger_mod.Logger.init(allocator, io, "logs.txt") catch |err| {
         std.debug.print("nie mozna otworzyc logs.txt: {s}\n", .{@errorName(err)});
         std.process.exit(1);
     };
     defer log.deinit();
 
-    try executor.runWhens(allocator, io, &config, program.whens, &log);
+    try executor.runWhens(allocator, io, init.environ_map, &config, program.whens, &log);
     executor.runBlock(allocator, io, &config, program, target_name, &log) catch |err| {
         std.debug.print("blad wykonania '{s}': {s}\n", .{ target_name, @errorName(err) });
         std.process.exit(1);
