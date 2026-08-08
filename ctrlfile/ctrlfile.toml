@@ -1,0 +1,10 @@
+[toolchain]
+compiler = "zig"
+optimizer = "ReleaseFast"
+
+[output]
+name = "myapp"
+path = "bin/myapp"
+
+[tools]
+required = ["zig", "git", "curl"]
